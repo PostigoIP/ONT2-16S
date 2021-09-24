@@ -1,0 +1,89 @@
+#!/bin/bash
+
+#mkdir reports
+
+echo  "16s sequencing pipeline report" > output.txt
+
+for d in barcode**_filtered**; do
+	 
+	cd $d 
+	
+	strbc=$(echo "${PWD##*/}" | awk -F _ '{print $1}')
+	
+	echo "#############################################" >> ../output.txt
+	
+	echo "Specimen: $strbc" >> ../output.txt
+
+	echo "#############################################" >> ../output.txt
+	reads_total=$(grep "Number of reads:" ../../barcode_stats/${strbc}_combined.fastq_stats | awk '{print $4}' | tr -d '\,,')
+	echo "Nº of reads_total: "$reads_total >> ../output.txt
+	reads_qfilter=$(zcat *.fastq.gz| wc -l |awk '{print $1/4}')
+	echo -e "Nº reads_q-filter: "$reads_qfilter'\t'$(echo | awk -v var=$reads_qfilter -v vara=$reads_total 'BEGIN{ans=(var/vara)*100} {print ans}') >> ../output.txt
+	ext_reads=$(grep -c ">" ./blast/${strbc}_filtered_*_16s_extraction.fasta)
+	echo -e "Nº reads_16s-extraction: "$ext_reads'\t'$(echo | awk -v var=$ext_reads -v vara=$reads_qfilter 'BEGIN{ans=(var/vara)*100} {print ans}')>> ../output.txt
+	hit_reads=$(cat ./blast/${strbc}_blast.txt | wc -l)	
+	echo -e  "Nº reads_blast-hits: "$hit_reads'\t'$(echo | awk -v var=$hit_reads -v vara=$ext_reads 'BEGIN{ans=(var/vara)*100} {print ans}') >> ../output.txt
+
+	echo "#############################################" >> ../output.txt
+
+	echo -e "Pathogen matches (Genus) (>1% of total reads):\n-----------------------------------------------" >> ../output.txt
+	
+	echo "Pathogen_ID, nº reads_blast, % reads_total" >> ../output.txt
+
+	cat ./blast/genus_summary_filter.txt | column -t >> ../output.txt
+
+	
+	echo "###################################################################################################################################################################" >> ../output.txt
+
+	##Intenta la vía de género, si conseguimos una similitud de 98% o más se queda, si no, se hace binning por taxid o gi identifier y se divide de nuevo
+
+
+	echo -e "Top 99% in depth analysis (species):\n------------------------------------" >> ../output.txt
+	
+	cd ./blast/matches
+	mkdir ../cns_alignment
+	 
+	for s in */; do
+		str=$(echo $s | tr -d '\/,')
+		echo $str
+		blast_assignment=$(grep "alignments" ./${str}/${str}_cns_blast.txt -A 2 | tail -1 | awk -F \| '{print $1}')
+		reads_map=$(samtools stats ./${str}/${str}.bam | grep "reads mapped:" | awk '{print $4}')
+		total_reads_blast=$(samtools stats ./${str}/${str}.bam | grep "raw total sequences:" | awk '{print $5}')
+		map_pc=$(echo | awk -v var=$reads_map -v vara=$total_reads_blast 'BEGIN{ans=(var/vara)*100} {print ans}')
+		of_blast=$(echo | awk -v var=$reads_map -v vara=$hit_reads 'BEGIN{ans=(var/vara)*100} {print ans}')
+		hq=$(seqtk fqchk ./${str}/${str}_cns.fastq | grep "ALL" | awk '{print $11}')
+		n_sites=$(grep "of Sites" ./${str}/sp_typing/${str}_tree_summary.txt | awk '{print $5}')
+		mkdir ${str}/bc_reads
+		seqtk subseq ../../barcode**_filtered_*.fastq.gz ${str}/names.lst > ./${str}/bc_reads/bc.fastq
+		cat ./${str}/bc_reads/bc.fastq | seqkit rmdup -n -o ./${str}/bc_reads/bc_clean.fastq && rm ./${str}/bc_reads/bc.fastq
+		guppy_barcoder --input_path ./${str}/bc_reads/ --save_path ./${str}/bc_reads/ --barcode_kits EXP-PBC096
+		mv ./${str}/bc_reads/barcoding_summary.txt ./${str} ; rm -r ./${str}/bc_reads/
+		avg_BC_score=$(awk '{ sum += $6; n++ } END { if (n > 0) print sum / n; }' ./${str}/barcoding_summary.txt)
+		ar=$(cat ./${str}/sp_typing/${str}_matrix.meg | grep " \]" -A 5000000 | tr -d '\[\],' | tail -n +2 | column -t -e -s '\t' | awk '{print $NF}' |head -n-2 | sort) ; ARRAY=($ar); 
+		distance_closest=$(printf '%s\n' "${ARRAY[@]}" | sort -n | head -n 1 |  awk '{print 100-$1*100}')
+		species_assigned=$(cat ./${str}/sp_typing/${str}_tree.nwk | awk -F "(" '{for (i =1; i<=NF ; i++) print $i}' | grep "_cns" | awk -F , '{print $1}' | awk -F [\|:] '{print $5}') 
+		support=$(cat ./${str}/sp_typing/${str}_tree.nwk | awk -F "(" '{for (i =1; i<=NF ; i++) print $i}' | grep "_cns" | awk -F \) '{print $2}' | awk -F : '{print $1}')
+		
+		cp ./${str}/${str}_cns.fasta ../cns_alignment
+	 	sed -i "1 s|$|-${str}|" ../cns_alignment/${str}_cns.fasta
+	 	 
+		echo -e $strbc'|'$blast_assignment'|'$map_pc'|'$total_reads_blast'|'$of_blast'|'$hq'|'$n_sites'|'$avg_BC_score'|'$distance_closest'|'$species_assigned'|'$support >> temp_tab.txt
+				
+	done
+		cat temp_tab.txt | sort -t\| -k 4nr > temp_tab.tmp && mv temp_tab.tmp temp_tab.txt
+		cat temp_tab.txt >> ../../../../q-filtered_reads/summary_all.txt
+		sed -i '1ibc_ID|cns_Blast_hit|reads_mapped(%)|gen_hits(n)|of_reads_blast(%)|HQ_cns(%)|aln_sites(n)|avg_bc-score(%)|p-distance_closest(%)|species_assigned|support' temp_tab.txt
+		cat temp_tab.txt | column -t -s "|" >> ../../../output.txt
+		rm temp_tab.txt
+				
+	echo -e "###################################################################################################################################################################\n\n"  >> ../../../output.txt
+		cat ../cns_alignment/*_cns.fasta > ../cns_alignment/cns_alignment.fasta
+		 
+		mafft ../cns_alignment/cns_alignment.fasta > ../cns_alignment/cns_aligned.fasta
+		megacc -a /home/ignacio/Documents/Scripts/mega_conf/distance_estimation_pairwise_nucleotide.mao -d ../cns_alignment/cns_aligned.fasta -o ../cns_alignment
+		  
+	cd ../../../../q-filtered_reads/
+	
+done
+
+sed -i '1ibc_ID|cns_Blast_hit|reads_mapped(%)|gen_hits(n)|of_reads_blast(%)|HQ_cns(%)|aln_sites(n)|avg_bc-score(%)|p-distance_closest(%)|species_assigned|support' summary_all.txt
