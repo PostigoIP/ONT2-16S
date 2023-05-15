@@ -1,7 +1,7 @@
 # ONT2-16S
 ### Full processing of preamplified 16S regions sequenced with ONT; from QC to pathogen identification.
 
-Please note: this script is designed to process 16S reads divided into regions. We designed a short 16S amplicon scheme for improved sensitivity, as preliminary tests revealed insufficient read quantities when attempting to amplify the entire 16S gene in a single amplicon. Thus, our approach encompasses the full 16S bacterial gene within three amplicons, each approximately 500 nucleotides in length.
+**Please note**: this script is designed to process 16S reads divided into regions. We designed a short 16S amplicon scheme for improved sensitivity, as preliminary tests revealed insufficient read quantities when attempting to amplify the entire 16S gene in a single amplicon. Thus, our approach encompasses the full 16S bacterial gene within three amplicons, each approximately 500 nucleotides in length.
 
 ----
 
