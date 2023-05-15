@@ -1,5 +1,9 @@
-# ONT2-16s
-### Full processing of 16s fastQ reads from ONT runs; from QC to pathogen identification.
+# ONT2-16S
+### Full processing of preamplified 16S regions sequenced with ONT; from QC to pathogen identification.
+
+Please note: this script is designed to process 16S reads divided into regions. We designed a short 16S amplicon scheme for improved sensitivity, as preliminary tests revealed insufficient read quantities when attempting to amplify the entire 16S gene in a single amplicon. Thus, our approach encompasses the full 16S bacterial gene within three amplicons, each approximately 500 nucleotides in length.
+
+----
 
 This bash script (`ONT2-16S.sh`) is a workflow that prepares MinION reads for downstream 16S analysis. The pipeline performs several steps to process the demultiplexed fastQ files obtained for each run and organize them into folders based on barcodes. The following is a description of the pipeline's functionality:
 
@@ -19,7 +23,7 @@ This bash script (`ONT2-16S.sh`) is a workflow that prepares MinION reads for do
 
 8. **Further BLAST Search**: The consensus sequence is subjected to another BLAST search against the 16S NCBI database. This step helps to validate and provide additional information about the consensus sequence.
 
-The pipeline generates reports containing information on the BLAST results and quality control. These reports undergo thorough assessment to determine the hits, which are sequences that meet specific criteria. The criteria include a BLAST identity match over 98%, 16S bacterial gene coverage of more than 600 nucleotides, a Phred score above 30 over at least 60% of the 16S consensus sequence, and a barcode score surpassing 85.9.
+The pipeline generates reports containing information on the BLAST results and quality control. These reports can be used to determine the hits, which are sequences that meet specific criteria. The criteria we normally use include a **BLAST identity match over 98%, 16S bacterial gene coverage of more than 600 nucleotides, a Phred score above 30 over at least 60% of the 16S consensus sequence, and a barcode score surpassing 85.9**.
 
 ## Workflow diagram
 ![250423_FigureS1](https://github.com/PostigoIP/ONT2-16s/assets/91267553/1a7dc763-a3c6-4ef2-a0c3-8a162fad7a8b)
