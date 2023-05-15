@@ -13,9 +13,9 @@ This bash script (`ONT2-16S.sh`) is a workflow that prepares MinION reads for do
 
 3. **Primer Mapping**: The pipeline maps 16S primers onto the filtered reads to extract the 16S regions 1 to 3. This step isolates the specific regions of interest within the reads.
 
-4. **Conversion to FASTA**: The extracted 16S regions are converted to FASTA format, which is a standard format for biological sequence data.
+4. **Conversion to FASTA**: The extracted 16S regions are converted to FASTA format.
 
-5. **BLAST Search**: The pipeline performs a BLAST search against the 16S rRNA database from NCBI using the FASTA-formatted 16S regions. This search helps identify similar sequences in the database.
+5. **BLAST Search**: The pipeline performs a BLAST search against the 16S rRNA database from NCBI using the FASTA-formatted 16S regions. 
 
 6. **Binning and Drafting**: The BLAST results are organized and grouped by gIDs (gene identifiers) in separate folders. For each gID hit, a reference 16S gene is drafted from the database. These reference genes provide a representative sequence for each identified gene.
 
