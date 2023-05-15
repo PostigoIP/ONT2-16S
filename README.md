@@ -3,6 +3,9 @@ Full processing of 16s fastQ reads from ONT runs; from QC to pathogen identifica
 
 This bash script (`16s_custom_workflow.sh`) is a workflow that prepares MinION reads for downstream 16S analysis.
 
+## Workflow diagram
+![250423_FigureS1](https://github.com/PostigoIP/ONT2-16s/assets/91267553/1a7dc763-a3c6-4ef2-a0c3-8a162fad7a8b)
+
 The scripts, conda environment, and necessary databases are assumed to be in specific locations on the local machine, please ensure they are in place before running the script.
 
 ## Prerequisites
@@ -20,6 +23,8 @@ Please install the above tools using either the package manager associated with 
 
 ## Conda Environment
 You need to have a conda environment named `InSilico_PCR` with all the necessary dependencies installed. The script will attempt to activate this environment, and will exit if it doesn't exist.
+
+
 
 ## Inputs
 The script works on fastq files in the current directory. These files should be named as "barcode*.fastq", where * is the barcode number.
