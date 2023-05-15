@@ -71,7 +71,7 @@ chmod +x ONT2-16S.sh
 ```
 ## Generating reports
 
-To generate a report from the run use the ('generate_16S_report.sh') script. This bash script generates a comprehensive report of the 16S sequencing pipeline. The report includes metrics like the number of total reads, filtered reads, extracted reads, and blast hits. It also includes information about pathogen matches and an in-depth analysis of top matches.
+To generate a report from the run use the (`generate_16S_report.sh`) script. This bash script generates a comprehensive report of the 16S sequencing pipeline. The report includes metrics like the number of total reads, filtered reads, extracted reads, and blast hits. It also includes information about pathogen matches and an in-depth analysis of top matches.
 
 ## Requirements
 
