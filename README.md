@@ -59,16 +59,16 @@ The script generates a number of output files, including:
 ## Running the script
 To run the script, navigate to the directory containing your fastq files and the bash script, and enter the following command in your terminal:
 ```
-./16s_custom_workflow.sh
+./ONT2-16S.sh
 ```
 
 Please note that you may need to grant execute permissions to the script file using the following command:
 ```
-chmod +x 16s_custom_workflow.sh
+chmod +x ONT2-16S.sh
 ```
 ## Generating reports
 
-To generate a report from the run use the 16s_report_cod.sh script. This bash script generates a comprehensive report of the 16S sequencing pipeline. The report includes metrics like the number of total reads, filtered reads, extracted reads, and blast hits. It also includes information about pathogen matches and an in-depth analysis of top matches.
+To generate a report from the run use the generate_16S_report.sh script. This bash script generates a comprehensive report of the 16S sequencing pipeline. The report includes metrics like the number of total reads, filtered reads, extracted reads, and blast hits. It also includes information about pathogen matches and an in-depth analysis of top matches.
 
 ## Requirements
 
