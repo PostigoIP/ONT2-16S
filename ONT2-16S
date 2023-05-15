@@ -3,179 +3,150 @@
 # script: 16s_custom_workflow.sh
 # This workflow prepares MinION reads for downstream 16s analysis
 
+# Activate the conda environment 'InSilico_PCR'
 source ~/anaconda3/etc/profile.d/conda.sh
 conda activate InSilico_PCR || \
   ( echo "# the conda environment 'InSilico_PCR' was not found on this machine" ;
     echo "# please read the top part of the script!" \
     && exit 1 )
 
+# Set the paths to the required scripts and files
 inSilico_PCR=/home/ignacio/Documents/Scripts/InSilico_PCR-master/InSilico_PCR.sh
 createReports=/home/ignacio/Documents/Scripts/16s_report_cod
 db=/home/ignacio/Documents/Scripts/blast/db
 megaconf=/home/ignacio/Documents/Scripts/mega_conf
 
-#Primer pairs
-
+# Define primer sets for different 16S v-regions
 primerset=1
 
-# Extract reads corresponding to the 16S v-regions primer sets
-
-#PRIMER FORWARD NAMES MUST CONTAIN AN F
-
-#16s-1
 set1=(AGAGTTTGATCMTGGCTCAG 27F TATTACCGCGGCTGCTGG 518R)
-
-#16s-2
 set2=(CTACGGGAGGCWGCAG 337F GACTACCAGGGTATCTAATC 805R)
-#Reverse adapter  ACTTGCCTGTCGCTCTATCTTC
-
-#16s-3
 set3=(TAAAACTYAAAKGAATTGACGGG 928F CGGTTACCTTGTTACGACTT 1492R)
 
-###########################-FUNCTIONS-######################################
-
-
-blastManage () {
-	
-	
+# Define the blastManage function
+blastManage() {
 	local str1=$1
 	
-	#Transform 16s extraction from fastq to fasta
-	
+	# Transform 16s extraction from fastq to fasta
 	seqtk seq -a $1 > ${str1%%.fq*}.fasta
 	
-	#Split reads into nº files = nº of available threads 
-	
-	#Megablast against 16s database; if nº of reads < threshold, reduce word size
-	echo "Blasting reads against 16s database"
+	# Perform blastn against the 16s database
+	echo "Blasting reads against the 16s database"
 	blastn -db $db/16s_ribosomal/16S_ribosomal_RNA -query ${str1%%.fq*}.fasta -evalue 1e-05 -out ${str1%%_*}_blast.txt -outfmt "6 qseqid sseqid staxids pident length mismatch gapopen qstart qend sstart send evalue bitscore qlen slen stitle" -num_threads 4 -max_target_seqs 1 -max_hsps 1 -word_size 64
 	
-	#Calculating basic stats
+	# Calculate basic statistics
 	classreads=$(wc -l ${str1%%_*}_blast.txt | awk '{print $1}')
 	totalreads=$(grep -c ">" ${str1%%.fq*}.fasta)
 	percReads=$(echo | awk -v var=$classreads -v vara=$totalreads 'BEGIN{ ans=(var/vara)*100} { print ans}')
 	
-	#Print nº of reads with BLAST hits vs total number of reads and % of total
-	echo $classreads ' out of' $totalreads 'reads were classifed, (' $percReads '%)'
+	# Print the number of reads with BLAST hits vs. total number of reads and percentage
+	echo "$classreads out of $totalreads reads were classified ($percReads%)"
 	
-	#From each hit, get number of reads and % of total
-	
-	#Return a list of hits (genus level) and count of reads from each hit and % of total_blast; hit name is genus
+	# Generate a list of hits (genus level) and count the number of reads for each hit and their percentage
 	awk '{A[$16]++}END{for(i in A)print i,A[i]}' ${str1%%_*}_blast.txt | sort -k2 -n -r | awk '{a[NR]=$0;x+=(b[NR]=$2)}END{while(++i<=NR)print a[i]"\t"100*b[i]/x}' > genus_reads_summary.txt
+	awk '{A[$16"_"$17]++}END{for(i in A)print i,A[i]}' ${str1%%_*}_blast.txt | sort -k2 -n -r | awk '{a[NR]=$0;x+=(b[NR]=$2)}
+	END{while(++i<=NR)print a[i]"\t"100*b[i]/x}' > genus_reads_info.txt
 	
-	awk '{A[$16"_"$17]++}END{for(i in A)print i,A[i]}' ${str1%%_*}_blast.txt | sort -k2 -n -r | awk '{a[NR]=$0;x+=(b[NR]=$2)}END{while(++i<=NR)print a[i]"\t"100*b[i]/x}' > genus_reads_info.txt
+	# Report stats to file
+	echo -e '\n####### '$classreads' out of '$totalreads' reads were classified ('$percReads'%)' >> genus_reads_info.txt
 	
-	#Report stats to file
-	echo -e '\n #######' $classreads ' out of' $totalreads 'reads were classifed, (' $percReads '%)' >> genus_reads_info.txt
-	
-	#Remove genus with less than 1% representation
+	# Remove genus with less than 1% representation
 	awk '(NR>0) && ($3 > 0.8 ) ' genus_reads_summary.txt > genus_summary_filter.txt
-	
 	awk '(NR>0) && ($3 > 0.8 ) ' genus_reads_info.txt > genus_info_filter.txt
 	
-	#For each match above >1% in genus_summary_filter.txt, create list name and create a folder and extract reads from fastq file
-	
+	# For each match above 1% in genus_summary_filter.txt, create a list name, create a folder, and extract reads from the fastq file
 	genus=$(cat genus_summary_filter.txt| awk '{print $1}')
-
 	mkdir matches
 	pwd
 	
 	for l in $genus; do
-		
 		local str=$l
 		mkdir $l
 		mv $l matches && cd matches/$l
 		
-		#Retrieve reads of current match 
+		# Retrieve reads of the current match
 		cat ../../${str1%%_*}_blast.txt | grep $l | awk '{print $1}' > names.lst
 		seqtk subseq ../../$1  names.lst > ${str}_reads.fastq
 		
-		#Retrieve db 16s match in the database 
+		# Retrieve the database 16s match
 		grep "$(grep "$l" ../../genus_reads_info.txt | head -n 1 |tr -d '[],' | awk '{print  $1}' | awk -F _ '{print $1 " " $2}')" $db/16s_ribosomal/16s_ribosomal.fasta | head -n 1 | tr -d '>,' > refname.lst
 		seqtk subseq $db/16s_ribosomal/16s_ribosomal.fasta refname.lst | head -n 2 > db_match_ref.fasta
 		
-		#Map against db_match with bowtie
+		# Map against the db_match with bowtie
 		bowtie2-build-s db_match_ref.fasta myIndex
 		bowtie2-align-s -I 0 -X 800 -p 4 --sensitive-local -q -x myIndex -U ${str}_reads.fastq -S ${str}.sam
 		samtools view -bS ${str}.sam | samtools sort - -o ${str}.bam > ${str}.bam
-
 		
-		#Create consensus sequence (not optimal yet, check geneious)
-		samtools mpileup -uf db_match_ref.fasta ${str}.bam | bcftools call -c | vcfutils.pl vcf2fq > ${str}_cns.fastq && sed -i "1 s|$|_cns|" ${str}_cns.fastq
+		# Create a consensus sequence
+		samtools mpileup -uf db_match_ref.fasta ${str}.bam | bcftools call -c | vcfutils.pl vcf2fq > ${str}_cns.fastq
+		sed -i "1 s|$|_cns|" ${str}_cns.fastq
 		seqtk seq -aQ33 -q10 -n N ${str}_cns.fastq > ${str}_cns.fasta 
 		
-		
-		#Blast consensus 
+		# Blast the consensus sequence
 		blastn -db $db/rrn_16s -query ${str}_cns.fasta -evalue 1e-05 -out ${str}_cns_blast.txt -outfmt 0 -num_threads 4 -max_target_seqs 5 -max_hsps 5 -word_size 11
 		
-		#Type species getting genus members and performing alignment and NJ tree
-		
+		# Type species: gather all species under the genus, perform alignment and create an NJ tree
 		mkdir sp_typing && cd sp_typing
-		#Look for genus name in db to gather all species | remove ">" symbol
+		
+		# Look for the genus name in the database to gather all species and remove the ">" symbol
 		grep "$l" $db/16s_ribosomal/16s_ribosomal.fasta | tr -d '>,' > names_match.lst
-		#Get sequences in names | make names pretty
-		seqtk subseq $db/16s_ribosomal/16s_ribosomal.fasta names_match.lst | awk '{print $1 $2 " " $3}' | seqkit seq -g -m 1200 > ${str}_alignment.fasta
-		#If genus has more than 1000
+		
+		# Get sequences in names_match.lst | awk '{print $1 $2 " " $3}' | seqkit seq -g -m 1200 > ${str}_alignment.fasta
+		
+		# If the genus has more than 1000 sequences, sample 350 sequences
 		alignr=$(grep -c ">" ${str}_alignment.fasta)
-		if [ $alignr -gt 360 ]; then seqtk sample -s100 ${str}_alignment.fasta 350 > temp;fi && mv temp ${str}_alignment.fasta
-		#Get match consensus and add it into alignment file
+		if [ $alignr -gt 360 ]; then 
+			seqtk sample -s100 ${str}_alignment.fasta 350 > temp
+			mv temp ${str}_alignment.fasta
+		fi
+		
+		# Add the consensus sequence to the alignment file
 		cat ../${str}_cns.fasta >> ${str}_alignment.fasta
-		#Perform MAFFT alignment
+		
+		# Perform MAFFT alignment
 		mafft ${str}_alignment.fasta > ${str}_aligned.fasta
-		#Create nj tree with MegaX - command line (config file is provided)
+		
+		# Create an NJ tree with MegaX (command line, config file provided)
 		megacc -a $megaconf/infer_NJ_nucleotide.mao -d ${str}_aligned.fasta -o ./${str}_tree
-		#Create distance matrix with MegaX - command line (config file is provided)
+		
+		# Create a distance matrix with MegaX (command line, config file provided)
 		megacc -a $megaconf/distance_estimation_complete_nucleotide.mao -d ${str}_aligned.fasta -o ./${str}_matrix
-		#Create an image of the tree in png
+		
+		# Create an image of the tree in PNG format
 		cat ${str}_tree.nwk | ete3 view --face 'value:@name, color:black, size:12, pos:b-right' --face 'value:@support, color:red, size:10, pos:b-top, nodetype:internal' --image "${str}_tree.png"
 		
-		cd ../../../	
+		cd ../../../
 	done
-	
-	}
+}
 
-	
-##############################################################################
-
-
-#Combine reads of each barcode
-
-
+# Combine reads of each barcode
 mkdir combined_reads
-
 echo "Combining split reads..."
 for d in barcode*; do
 	cd $d
 	cat *.fastq > ${d}_combined.fast
-	echo "$d combined succesfully" 
+	echo "$d combined successfully" 
 	mv ${d}_combined.fast ../combined_reads
 	cd ..
-	done
+done
 
-#Change names
-
+# Change file extensions from .fast to .fastq
 cd combined_reads
-
 for f in *.fast; do
 	str=$f
 	mv $f ${str%%.fast*}.fastq
 done
 
-
-#Create stat files for each reads file
-
+# Create stat files for each reads file
 mkdir barcode_stats
-
 for f in *.fastq; do
- 	echo "Calculating run stats of $f with NanoStats"
+	echo "Calculating run stats of $f with NanoStats"
 	NanoStat --fastq $f -t 4 -n ${f}_stats
 	mv ${f}_stats barcode_stats
 	echo "Done"
 done
 
-  
-#Extract median quality values with NanoStats and filter reads by that value
-
+# Extract median quality values with NanoStats and filter reads by that value
 mkdir q-filtered_reads
 cd barcode_stats
 mv ../*.fastq ./
@@ -184,46 +155,43 @@ for f in *_stats; do
 	q=$(grep 'Median read quality:' $f | sed 's/^.*://' | tr -d ' '| awk '{print ($0-int($0)<0.499)?int($0):int($0)+1}')
 	echo "Median q of $f is $q"
 	str=$f
-	echo "Filtering reads with avg. q-value higher or equal than $q"
+	echo "Filtering reads with avg. q-value higher or equal to $q"
 	NanoFilt -q $q ${str%%_stats*} | gzip > ${str%%_*}_filtered_$q.fastq.gz
-	echo "Compressing and transferring ${str%%_*} reads to q-filtered reads folder"
+	echo "Compressing and transferring ${str%%_*} reads to the q-filtered reads folder"
 	mv ${str%%_*}_filtered_$q.fastq.gz ../q-filtered_reads
 	echo "Done"
 done
 mv *fastq ../	
 cd ../q-filtered_reads
 
-#Use InSilicoPCR to map primer sets and extract the amplicons contained within
- 
+# Use InSilicoPCR to map primer sets and extract the amplicons contained within
 for f in *fastq.gz; do
-	
 	str=$f
-	#Create a folder with the name from fastq file of the iteration, move fastq file to it and enter the folder
+	# Create a folder with the name from the fastq file of the iteration, move the fastq file to it, and enter the folder
 	mkdir ${str%%.fastq*} && mv $f ${str%%.fastq*} && cd ${str%%.fastq*}
 	
-	while [ $primerset -lt 3 ]
-		do
-		
-		if [ $primerset -eq 1 ]
-			then
-				mkdir ${set1[1]} && mv $f ${set1[1]} && cd ${set1[1]}
-				echo "Checking for primerset ${set1[1]}-${set1[3]} in $f reads and extracting the sequences contained within"
-				bash $inSilico_PCR $f ${set1[0]} ${set1[1]} ${set1[2]} ${set1[3]}
-				mv $f ../ && cd ..
-				
-				mkdir ${set2[1]} && mv $f ${set2[1]} && cd ${set2[1]}
-				echo "Checking for primerset ${set2[1]}-${set2[3]} in $f reads and extracting the sequences contained within"
-				bash $inSilico_PCR $f ${set2[0]} ${set2[1]} ${set2[2]} ${set2[3]}
-				mv $f ../ && cd ..
-				primerset=2
-			else	
-				mkdir ${set3[1]}
-				mv $f ${set3[1]}
-				cd ${set3[1]}
-				echo "Checking for primerset ${set2[1]}-${set2[3]} in $f reads and extracting the sequences contained within"
-				bash $inSilico_PCR $f ${set3[0]} ${set3[1]} ${set3[2]} ${set3[3]}
-				mv $f ../ && cd ..
-				primerset=3
+	while [ $primerset -lt 3 ]; do
+		if [ $primerset -eq 1 ]; then
+			mkdir ${set1[1]} && mv $f ${set1[1]} && cd ${set1[1]}
+			echo "Checking for primerset ${set1[1]}-${set1[3]} in $f reads and extracting the sequences contained within"
+			bash $inSilico_PCR $f ${set1[0]} ${set1[1]} ${set1[2]} ${set1[3]}
+			mv $f ../ && cd ..
+			
+			mkdir ${set2[1]} && mv $f ${set2[1]} && cd ${set2[1]}
+			echo "Checking for primerset ${set2[1]}-${set2[3]} in $f reads and extracting the sequences contained within"
+			bash $inSilico_PCR $f ${set2[0]} ${set2[1]} ${set2[2]} ${set2[3]}
+			mv $f ../ && cd ..
+			
+			primerset=2
+		else	
+			mkdir ${set3[1]}
+			mv $f ${set3[1]}
+			cd ${set3[1]}
+			echo "Checking for primerset ${set2[1]}-${set2[3]} in $f reads and extracting the sequences contained within"
+			bash $inSilico_PCR $f ${set3[0]} ${set3[1]} ${set3[2]} ${set3[3]}
+			mv $f ../ && cd ..
+			
+			primerset=3
 		fi
 	done
 	
@@ -232,64 +200,34 @@ for f in *fastq.gz; do
 	
 	echo "Done with $f"
 done
-	
-#Combine extracted regions in a single file... WARNING! Primer forward name MUST contain an F
 
+# Combine the extracted regions into a single file
 for d in barcode*; do
-	
 	str=$d
 	cd $d
 	for f in *F; do
 		cd $f
 		cp *.fq.gz ../
-		echo "$f copied succesfully" 
+		echo "$f copied successfully" 
 		cd ..
 	done
 	
 	cat *.fq.gz > ${str}_16s_extraction.fq.gz
 	mkdir blast 
-	Move to "extracted 16s reads" into blast folder
 	mv ${str}_16s_extraction.fq.gz blast
 	rm *fq.gz
 	
 	cd blast
 	gunzip ${str}_16s_extraction.fq.gz
 	
-	#Call blastManage function to blast, bin, and create consensus of top hits
-	
+	# Call the blastManage function to blast, bin, and create a consensus of the top hits
 	blastManage ${str}_16s_extraction.fq
 	
-	
-		
-cd ../../../q-filtered_reads
-
+	cd ../../../q-filtered_reads
 done
 
-#Call create reports script
+# Call the create reports script
 bash $createReports
 
-
-#Call create reports script
-conda deactivate 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+# Deactivate the conda environment
+conda deactivate
