@@ -1,5 +1,5 @@
 # ONT2-16s
-Full processing of 16s fastQ reads from ONT runs; from QC to pathogen identification.
+### Full processing of 16s fastQ reads from ONT runs; from QC to pathogen identification.
 
 This bash script (`ONT2-16S.sh`) is a workflow that prepares MinION reads for downstream 16S analysis. The pipeline performs several steps to process the demultiplexed fastQ files obtained for each run and organize them into folders based on barcodes. The following is a description of the pipeline's functionality:
 
