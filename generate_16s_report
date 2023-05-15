@@ -1,0 +1,141 @@
+#!/bin/bash
+
+# This script generates a report for a 16s sequencing pipeline.
+
+# Create a directory for reports
+# mkdir reports
+
+# Write the report header to output.txt
+echo "16s sequencing pipeline report" > output.txt
+
+# Iterate through directories starting with 'barcode' and ending with '_filtered'
+for d in barcode**_filtered**; do
+	 
+	cd $d 
+	
+	# Extract the barcode from the directory name
+	strbc=$(echo "${PWD##*/}" | awk -F _ '{print $1}')
+	
+	# Write the specimen header to output.txt
+	echo "#############################################" >> ../output.txt
+	echo "Specimen: $strbc" >> ../output.txt
+	echo "#############################################" >> ../output.txt
+	
+	# Count the total number of reads from barcode_stats file
+	reads_total=$(grep "Number of reads:" ../../barcode_stats/${strbc}_combined.fastq_stats | awk '{print $4}' | tr -d '\,,')
+	echo "Nº of reads_total: $reads_total" >> ../output.txt
+	
+	# Count the number of quality-filtered reads
+	reads_qfilter=$(zcat *.fastq.gz | wc -l | awk '{print $1/4}')
+	echo -e "Nº reads_q-filter: $reads_qfilter\t$(echo | awk -v var=$reads_qfilter -v vara=$reads_total 'BEGIN{ans=(var/vara)*100} {print ans}')" >> ../output.txt
+	
+	# Count the number of reads after 16s extraction
+	ext_reads=$(grep -c ">" ./blast/${strbc}_filtered_*_16s_extraction.fasta)
+	echo -e "Nº reads_16s-extraction: $ext_reads\t$(echo | awk -v var=$ext_reads -v vara=$reads_qfilter 'BEGIN{ans=(var/vara)*100} {print ans}')" >> ../output.txt
+	
+	# Count the number of reads with blast hits
+	hit_reads=$(cat ./blast/${strbc}_blast.txt | wc -l)	
+	echo -e  "Nº reads_blast-hits: $hit_reads\t$(echo | awk -v var=$hit_reads -v vara=$ext_reads 'BEGIN{ans=(var/vara)*100} {print ans}')" >> ../output.txt
+
+	echo "#############################################" >> ../output.txt
+
+	# Write the header for pathogen matches (genus) section
+	echo -e "Pathogen matches (Genus) (>1% of total reads):\n-----------------------------------------------" >> ../output.txt
+	echo "Pathogen_ID, nº reads_blast, % reads_total" >> ../output.txt
+
+	# Append the contents of genus_summary_filter.txt to output.txt
+	cat ./blast/genus_summary_filter.txt | column -t >> ../output.txt
+
+	echo "###################################################################################################################################################################" >> ../output.txt
+
+	## Try the genus-based approach. If a similarity of 98% or more is achieved, keep it. Otherwise, perform binning by taxid or gi identifier and re-divide.
+
+	# Write the header for the top 99% in-depth analysis (species) section
+	echo -e "Top 99% in-depth analysis (species):\n------------------------------------" >> ../output.txt
+
+	# Enter the 'matches' directory and create a new directory for CNS alignment
+	cd ./blast/matches
+	mkdir ../cns_alignment
+
+	# Iterate through subdirectories
+	for s in */; do
+		str=$(echo $s | tr -d '\/,')
+		echo $str
+
+		# Extract blast assignment, number of mapped reads, total blast reads, and mapping percentage
+		blast_assignment=$(grep "alignments" ./${str}/${str}_cns_blast.txt -A 2 | tail -1 | awk -F \| '{print $1}')
+		reads_map=$(samtools stats ./${str}/${str}.bam | grep "reads mapped:" | awk '{print $4}')
+		total_reads_blast=$(samtools stats ./${str}/${str}.bam | grep "raw total sequences:" | awk '{print $5}')
+		map_pc=$(echo | awk -v var=$reads_map -v vara=$total_reads_blast 'BEGIN{ans=(var/vara)*100} {print ans}')
+		of_blast=$(echo | awk -v var=$reads_map -v vara=$hit_reads 'BEGIN{ans=(var/vara)*100} {print ans}')
+		hq=$(seqtk fqchk ./${str}/${str}_cns.fastq | grep "ALL" | awk '{print $11}')
+		n_sites=$(grep "of Sites" ./${str}/sp_typing/${str}_tree_summary.txt | awk '{print $5}')
+
+		# Create a directory for barcode reads
+		mkdir ${str}/bc_reads
+
+		# Extract barcode reads from filtered fastq files
+		seqtk subseq ../../barcode**_filtered_*.fastq.gz ${str}/names.lst > ./${str}/bc_reads/bc.fastq
+
+		# Remove duplicate barcode reads
+		cat ./${str}/bc_reads/bc.fastq | seqkit rmdup -n -o ./${str}/bc_reads/bc_clean.fastq && rm ./${str}/bc_reads/bc.fastq
+
+		# Perform barcode demultiplexing using guppy_barcoder
+		guppy_barcoder --input_path ./${str}/bc_reads/ --save_path ./${str}/bc_reads/ --barcode_kits EXP-PBC096
+
+		# Move the barcoding summary file to the current directory and remove the temporary directory
+		mv ./${str}/bc_reads/barcoding_summary.txt ./${str}
+		rm -r ./${str}/bc_reads/
+
+		# Calculate the average barcode score
+		avg_BC_score=$(awk '{ sum += $6; n++ } END { if (n > 0) print sum / n; }' ./${str}/barcoding_summary.txt)
+
+		# Extract the p-distance closest value from the sp_typing matrix
+		ar=$(cat ./${str}/sp_typing/${str}_matrix.meg | grep " \]" -A 5000000 | tr -d '\[\],' | tail -n +2 | column -t -e -s '\t' | awk '{print $NF}' | head -n-2 | sort)
+		ARRAY=($ar);
+		distance_closest=$(printf '%s\n' "${ARRAY[@]}" | sort -n | head -n 1 | awk '{print 100-$1*100}')
+
+		# Extract the assigned species and support values from the sp_typing tree
+		species_assigned=$(cat ./${str}/sp_typing/${str}_tree.nwk | awk -F "(" '{for (i =1; i<=NF ; i++) print $i}' | grep "_cns" | awk -F , '{print $1}' | awk -F [\|:] '{print $5}')
+		support=$(cat ./${str}/sp_typing/${str}_tree.nwk | awk -F "(" '{for (i =1; i<=NF ; i++) print $i}' | grep "_cns" | awk -F \) '{print $2}' | awk -F : '{print $1}')
+
+		# Copy the CNS alignment file to the cns_alignment directory
+		cp ./${str}/${str}_cns.fasta ../cns_alignment
+	 	# Add a suffix to the header of the CNS alignment file
+	 	sed -i "1 s|$|-${str}|" ../cns_alignment/${str}_cns.fasta
+	 	 
+		# Append the analysis results to temp_tab.txt
+		echo -e $strbc'|'$blast_assignment'|'$map_pc'|'$total_reads_blast'|'$of_blast'|'$hq'|'$n_sites'|'$avg_BC_score'|'$distance_closest'|'$species_assigned'|'$support >> temp_tab.txt
+				
+	done
+
+	# Sort the analysis results based on the total number of reads and append them to summary_all.txt
+	cat temp_tab.txt | sort -t\| -k 4nr > temp_tab.tmp && mv temp_tab.tmp temp_tab.txt
+	cat temp_tab.txt >> ../../../../q-filtered_reads/summary_all.txt
+
+	# Add the header to temp_tab.txt and append its contents to output.txt
+	sed -i '1ibc_ID|cns_Blast_hit|reads_mapped(%)|gen_hits(n)|of_reads_blast(%)|HQ_cns(%)|aln_sites(n)|avg_bc-score(%)|p-distance_closest(%)|species_assigned|support' temp_tab.txt
+	cat temp_tab.txt | column -t -s "|" >> ../../../output.txt
+
+	# Remove the temporary file
+	rm temp_tab.txt
+				
+	echo -e "###################################################################################################################################################################\n\n"  >> ../../../output.txt
+
+	# Combine all CNS alignment files into a single file
+	cat ../cns_alignment/*_cns.fasta > ../cns_alignment/cns_alignment.fasta
+
+	# Perform sequence alignment using MAFFT
+	mafft ../cns_alignment/cns_alignment.fasta > ../cns_alignment/cns_aligned.fasta
+
+	# Perform distance estimation using MEGA-CC
+	megacc -a /home/ignacio/Documents/Scripts/mega_conf/distance_estimation_pairwise_nucleotide.mao -d ../cns_alignment/cns_aligned.fasta -o ../cns_alignment
+
+	# Go back to the q-filtered_reads directory
+	cd ../../../../q-filtered_reads/
+	
+done
+
+# Add the header to summary_all.txt
+sed -i '1ibc_ID|cns_Blast_hit|reads_mapped(%)|gen_hits(n)|of_reads_blast(%)|HQ_cns(%)|aln_sites(n)|avg_bc-score(%)|p-distance_closest(%)|species_assigned|support' summary_all.txt
+		
